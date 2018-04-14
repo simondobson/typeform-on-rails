@@ -16,3 +16,12 @@ Pre requisites for this:
 # Example
 
 You can look at an example (with example commits) here : https://github.com/simondobson/typeform-on-rails-example
+
+Notes
+- More info on the use cases
+- Screenshots
+- CLI tool
+- Limitations
+- Clean up code
+- Auto-populate table (map generated names to titles of blocks)
+- Contributing section
