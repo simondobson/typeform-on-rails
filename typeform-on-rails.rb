@@ -1,13 +1,11 @@
 require 'bundler'
 Bundler.require
 
-require_relative 'typeform_request.rb'
-
 @model_name = ''
 @attribute_array = []
 
 def assume_rails_type(block)
-  case block[:type].to_sym
+  case block.type.to_sym
   when :yes_no, :legal
     :boolean
   when :short_text, :email, :multiple_choice, :picture_choice, :dropdown, :file_upload, :website
@@ -21,30 +19,26 @@ def assume_rails_type(block)
   end
 end
 
-def throw_request_error(request)
-  if request.not_found?
-    raise StandardError.new("That form doesn't exist!")
-  else
-    raise StandardError.new("Sorry! Retrieving the form failed")
-  end
-end
-
-def get_model_info(form_id)
+def turn_typeform_to_model(form_id)
   unless form_id.length == 6
     raise ArgumentError.new("You must pass a form id to 'script.rb' and a form id is 6 characters long")
     exit
   end
-  retrieve_form_request = TypeformRequest.new(form_id)
-  throw_request_error(retrieve_form_request) unless retrieve_form_request.success?
-  blocks = retrieve_form_request.blocks
+
+  retrieve_form_request = RetrieveFormRequest.execute(Form.new(id: form_id))
+  
+  blocks = retrieve_form_request.form.blocks
 
   rails_types = [:binary, :boolean, :date, :datetime, :decimal, :float, :integer, :primary_key, :string, :text, :time, :timestamp]
-  blocks.reject! { |block| block[:type].to_sym == :statement }
-  payment_deleted = blocks.reject! { |block| block[:type].to_sym == :payment }
-  puts "Sorry! Payment field is not supported yet in this Rails integration".red if !payment_deleted.nil?
+  blocks.reject! { |block| block.type.to_sym == :statement }
+  payment_deleted = blocks.reject! { |block| block.type.to_sym == :payment }
+  if !payment_deleted.nil?
+    raise StandardError.new("Sorry, payment blocks are not supported")
+    exit
+  end
   blocks.each do |block|
     attribute = Hash.new
-    title = block[:title].green
+    title = block.title.green
     blue_x = 'x'.blue
     puts "For this block, '#{title}', how would you like the Rails attribute named?"
     puts "Enter #{blue_x} if you don't want to save this answer in your Rails project"
@@ -52,7 +46,7 @@ def get_model_info(form_id)
     attribute_name = STDIN.gets.chomp.downcase
     next if attribute_name == 'x'
     attribute[:attribute_name] = attribute_name
-    attribute[:attribute_id] = block[:id]
+    attribute[:attribute_id] = block.id
 
     assumed_type = assume_rails_type(block).to_s
     puts "And is #{assumed_type.red} - the correct Rails type for this attribute?"
@@ -62,7 +56,7 @@ def get_model_info(form_id)
     correct_type = answer == 'y'
 
     if correct_type
-      attribute[:typeform_type] = block[:type]
+      attribute[:typeform_type] = block.type
       attribute[:rails_type] = assumed_type
       @attribute_array << attribute
       next
@@ -73,7 +67,7 @@ def get_model_info(form_id)
     while(!type_found)
       rails_type = STDIN.gets.chomp.downcase
       if rails_types.include?(rails_type.to_sym)
-        attribute[:typeform_type] = block[:type]
+        attribute[:typeform_type] = block.type
         attribute[:rails_type] = assumed_type
         @attribute_array << attribute
         type_found = true
@@ -213,6 +207,6 @@ end
 
 form_id = ARGV[0]
 
-get_model_info(form_id)
+turn_typeform_to_model(form_id)
 
 print_output
