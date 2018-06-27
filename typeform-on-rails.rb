@@ -1,6 +1,8 @@
 require 'bundler'
 Bundler.require
 
+@rails_types = [:binary, :boolean, :date, :datetime, :decimal, :float, :integer, :primary_key, :string, :text, :time, :timestamp]
+
 @model_name = ''
 @attribute_array = []
 
@@ -19,24 +21,34 @@ def assume_rails_type(block)
   end
 end
 
-def turn_typeform_to_model(form_id)
-  unless form_id.length == 6
-    raise ArgumentError.new("You must pass a form id to 'script.rb' and a form id is 6 characters long")
-    exit
-  end
-
+def get_form(form_id)
   retrieve_form_request = RetrieveFormRequest.execute(Form.new(id: form_id))
-  
-  blocks = retrieve_form_request.form.blocks
-
-  rails_types = [:binary, :boolean, :date, :datetime, :decimal, :float, :integer, :primary_key, :string, :text, :time, :timestamp]
-  blocks.reject! { |block| block.type.to_sym == :statement }
-  payment_deleted = blocks.reject! { |block| block.type.to_sym == :payment }
+  form = retrieve_form_request.form
+  form.blocks.reject! { |block| block.type.to_sym == :statement }
+  payment_deleted = form.blocks.reject! { |block| block.type.to_sym == :payment }
   if !payment_deleted.nil?
     raise StandardError.new("Sorry, payment blocks are not supported")
     exit
   end
-  blocks.each do |block|
+  return form
+end
+
+def turn_typeform_to_model(form_id)
+  form = get_form(form_id)
+  form.blocks.each do |block|
+    attribute = Hash.new
+    attribute[:attribute_name] = (block.title.slice(0, 10) + '_' + block.type.to_s).delete(' ').downcase
+    attribute[:attribute_id] = block.id
+    attribute[:typeform_type] = block.type
+    attribute[:rails_type] = assume_rails_type(block).to_s
+    @attribute_array << attribute   
+  end
+  @model_name = form.title.delete(' ')
+end
+
+def turn_typeform_to_model_interactive(form_id)
+  form = get_form(form_id)
+  form.blocks.each do |block|
     attribute = Hash.new
     title = block.title.green
     blue_x = 'x'.blue
@@ -47,33 +59,30 @@ def turn_typeform_to_model(form_id)
     next if attribute_name == 'x'
     attribute[:attribute_name] = attribute_name
     attribute[:attribute_id] = block.id
-
     assumed_type = assume_rails_type(block).to_s
     puts "And is #{assumed_type.red} - the correct Rails type for this attribute?"
     puts '(y/n)'.blue
     puts ''
     answer = STDIN.gets.chomp.downcase
     correct_type = answer == 'y'
-
     if correct_type
       attribute[:typeform_type] = block.type
       attribute[:rails_type] = assumed_type
       @attribute_array << attribute
       next
     end
-
     type_found = false
     puts 'What type would you like it to be?'
     while(!type_found)
       rails_type = STDIN.gets.chomp.downcase
-      if rails_types.include?(rails_type.to_sym)
+      if @rails_types.include?(rails_type.to_sym)
         attribute[:typeform_type] = block.type
         attribute[:rails_type] = assumed_type
         @attribute_array << attribute
         type_found = true
       else
         puts 'Thats not a Rails type! Available types are below'
-        puts rails_types.inspect
+        puts @rails_types.inspect
         puts
       end
     end
@@ -130,7 +139,7 @@ def generate_controller_code
   end
   attributes_case_statement << "            end"
 
-  model_initializing = "@#{@model_name.downcase} = #{@model_name.capitalize}.new("
+  model_initializing = "@#{@model_name.downcase} = #{@model_name}.new("
   @attribute_array.each do |attribute|
     model_initializing << "#{attribute[:attribute_name]}: #{attribute[:attribute_name]}, "
   end
@@ -203,10 +212,13 @@ def print_output
   puts "Put this code in your '#{@model_name}sController.rb' file".green
   puts "#{generate_controller_code}"
   puts ""
+  puts "==========================================================================================================================".red
 end
 
 form_id = ARGV[0]
 
-turn_typeform_to_model(form_id)
+interactive = ARGV[1] == '-i'
+
+interactive ? turn_typeform_to_model_interactive(form_id) : turn_typeform_to_model(form_id)
 
 print_output
